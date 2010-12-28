@@ -128,9 +128,9 @@ int buildPclImage(PclImage dest, char *dataRgb, uint16_t *dataDepth) {
 			int rgbV = round((rgbPointY * fy_rgb * invZ) + cy_rgb);
 			int rgbIndex = 3*(FREENECT_FRAME_W*rgbV + rgbU);
 
-			dest[v][u].blue = dataRgb[rgbIndex];
+			dest[v][u].blue = dataRgb[rgbIndex+2];
 			dest[v][u].green = dataRgb[rgbIndex + 1];
-			dest[v][u].red = dataRgb[rgbIndex + 2];
+			dest[v][u].red = dataRgb[rgbIndex];
 		}
 	}
 
@@ -142,9 +142,9 @@ void rgbImage(PclImage src, IplImage *dst) {
 	for(v=0; v<FREENECT_FRAME_H; v++) {
 		for(u=0; u<FREENECT_FRAME_W; u++) {
 			if (src[v][u].valid) {
-				((unsigned char*)(dst->imageData))[3*(FREENECT_FRAME_W*v + u)] = src[v][u].red;
+				((unsigned char*)(dst->imageData))[3*(FREENECT_FRAME_W*v + u)+2] = src[v][u].red;
 				((unsigned char*)(dst->imageData))[3*(FREENECT_FRAME_W*v + u)+1] = src[v][u].green;
-				((unsigned char*)(dst->imageData))[3*(FREENECT_FRAME_W*v + u)+2] = src[v][u].blue;
+				((unsigned char*)(dst->imageData))[3*(FREENECT_FRAME_W*v + u)] = src[v][u].blue;
 			}
 			else {
 				((unsigned char*)(dst->imageData))[3*(FREENECT_FRAME_W*v + u)] = 255;

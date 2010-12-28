@@ -20,13 +20,15 @@ freenect_device *f_dev;
 
 double freenect_angle = 0;
 
+PclImage curPcl;
+PclImage bgPcl;
+
 int main(int argc, char **argv)
 {
 
 	IplImage *imageMyRgb = cvCreateImage(cvSize(640, 480), IPL_DEPTH_8U, 3);
 	IplImage *imageDepth = cvCreateImage(cvSize(640, 480), IPL_DEPTH_8U, 1);
 
-	PclImage curPcl;
 
 	cvNamedWindow("MyRGB", CV_WINDOW_AUTOSIZE);
 	cvNamedWindow("Depth", CV_WINDOW_AUTOSIZE);
@@ -84,25 +86,25 @@ int main(int argc, char **argv)
 		}
 
 
-//		if (backgroundInit) {
-//			buildPclImage(bgPcl, dataRgb, dataDepth);
-//			backgroundInit = 0;
-//		}
+		if (backgroundInit) {
+			buildPclImage(bgPcl, dataRgb, dataDepth);
+			backgroundInit = 0;
+		}
 
 		buildPclImage(curPcl, dataRgb, dataDepth);
 
-//		int u, v;
-//		for(v=0; v<FREENECT_FRAME_H; v++) {
-//			for(u=0; u<FREENECT_FRAME_W; u++) {
-//				if (bgPcl[v][u].valid && curPcl[v][u].valid) {
-//					if(abs(bgPcl[v][u].blue - curPcl[v][u].blue) > 100) {
-//						curPcl[v][u].blue = 0;
-//						curPcl[v][u].red = 255;
-//						curPcl[v][u].green = 0;
-//					}
-//				}
-//			}
-//		}
+		int u, v;
+		for(v=0; v<FREENECT_FRAME_H; v++) {
+			for(u=0; u<FREENECT_FRAME_W; u++) {
+				if (bgPcl[v][u].valid && curPcl[v][u].valid) {
+					if(abs(bgPcl[v][u].blue - curPcl[v][u].blue) > 100) {
+						curPcl[v][u].blue = 0;
+						curPcl[v][u].red = 255;
+						curPcl[v][u].green = 0;
+					}
+				}
+			}
+		}
 
 		rgbImage(curPcl, imageMyRgb);
 		depthImage(curPcl, imageDepth);
