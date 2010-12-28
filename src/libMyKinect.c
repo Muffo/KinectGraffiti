@@ -83,24 +83,7 @@ int mapDepthToRgb(int depthU, int depthV, double depthPointZ) {
 }
 
 
-int buildPclImage(PclImage dest) {
-
-	char *dataRgb;
-	uint16_t *dataDepth;
-	uint32_t timestamp;
-
-	// ottengo i dati dal kinect
-	if (freenect_sync_get_rgb(&dataRgb, &timestamp) < 0) {
-		printf("Errore: freenect_sync_get_rgb\n");
-		return -1;
-	}
-
-	if (freenect_sync_get_depth(&dataDepth, &timestamp) < 0) {
-		free(dataRgb);
-		printf("Errore: freenect_sync_get_depth\n");
-		return -1;
-	}
-
+int buildPclImage(PclImage dest, char *dataRgb, uint16_t *dataDepth) {
 
 	int u, v;
 	for(v=0; v<FREENECT_FRAME_H; v++) {
@@ -150,9 +133,6 @@ int buildPclImage(PclImage dest) {
 			dest[v][u].red = dataRgb[rgbIndex + 2];
 		}
 	}
-
-	free(dataDepth);
-	free(dataRgb);
 
 	return 1;
 }
