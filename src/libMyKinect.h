@@ -32,6 +32,9 @@ int buildPclImage(PclImage dest, char *dataRgb, uint16_t *dataDepth);
 void initDepthLut();
 void rgbImage(PclImage src, IplImage *dst);
 void depthImage(PclImage src, IplImage *dst);
+float spaceDistance(Point3d pt1, Point3d pt2);
+float colorDistance(Point3d pt1, Point3d pt2);
+
 
 
 #endif /* LIBMYKINECT_H_ */

@@ -170,3 +170,13 @@ void depthImage(PclImage src, IplImage *dst) {
 	}
 }
 
+float spaceDistance(Point3d pt1, Point3d pt2) {
+	return sqrt(pow(pt1.x-pt2.x,2)+pow(pt1.y-pt2.y,2)+pow(pt1.z-pt2.z,2));
+}
+
+float colorDistance(Point3d pt1, Point3d pt2) {
+	return sqrt(pow(pt1.blue-pt2.blue,2)+pow(pt1.red-pt2.red,2)+pow(pt1.green-pt2.green,2));
+}
+
+
+
