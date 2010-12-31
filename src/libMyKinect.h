@@ -5,6 +5,8 @@
  *      Author: muffo
  */
 
+#include <opencv/cv.h>
+#include <opencv/highgui.h>
 
 #include <libfreenect/libfreenect.h>
 

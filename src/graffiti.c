@@ -48,6 +48,7 @@ void initBackground() {
 	int i, u, v;
 
 	printf("Background initialization: capture images");
+	fflush(stdout);
 
 	for (i=0; i<INIT_LEN; i++) {
 		if (getKinectData()<0) {
@@ -62,6 +63,7 @@ void initBackground() {
 	}
 
 	printf("\tDONE\nBackground initialization: elaboration");
+	fflush(stdout);
 
 
 	for(v=0; v<FREENECT_FRAME_H; v++) {
@@ -104,7 +106,35 @@ void initBackground() {
 	}
 
 	printf("\t\tDONE\n");
+	fflush(stdout);
 
+}
+
+int processKeyPressed(int keyPressed) {
+	if (keyPressed==27) return 0;
+
+	if (keyPressed > 0) {
+		switch (keyPressed) {
+			case 'w':
+				freenect_angle++;
+				if (freenect_angle > 30) {
+					freenect_angle = 30;
+				}
+				break;
+			case 's':
+				freenect_angle--;
+				if (freenect_angle < -30) {
+					freenect_angle = -30;
+				}
+				break;
+			case 'x':
+				initBackground();
+				break;
+		}
+		freenect_sync_set_tilt_degs(freenect_angle);
+	}
+
+	return 1;
 }
 
 
@@ -132,38 +162,14 @@ int main(int argc, char **argv)
 
 
 	initDepthLut();
+	initUndistortMaps();
 
  	freenect_sync_set_tilt_degs(freenect_angle);
  	freenect_sync_set_led(LED_RED);
 
  	initBackground();
 
-	while (1) {
-		int keyPressed = cvWaitKey(10);
-
-
-		if (keyPressed==27) break;
-		if (keyPressed > 0) {
-			switch (keyPressed) {
-				case 'w':
-					freenect_angle++;
-					if (freenect_angle > 30) {
-						freenect_angle = 30;
-					}
-					break;
-				case 's':
-					freenect_angle--;
-					if (freenect_angle < -30) {
-						freenect_angle = -30;
-					}
-					break;
-				case 'x':
-					initBackground();
-					break;
-			}
-			freenect_sync_set_tilt_degs(freenect_angle);
-		}
-
+	while (processKeyPressed(cvWaitKey(10))) {
 
 
 		if (getKinectData()<0)
