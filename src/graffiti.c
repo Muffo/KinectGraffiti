@@ -20,15 +20,22 @@ freenect_device *f_dev;
 char *dataRgb;
 uint16_t *dataDepth;
 uint32_t timestamp;
+int saveFlag;
 
 double freenect_angle = 0;
 
 PclImage curPcl;
 PclImage bgPcl;
 
-#define INIT_LEN 10
-PclImage bgPclArray[INIT_LEN];
 
+#define INIT_LEN 10
+
+
+#define DISTANCE_THRESHOLD 0.04
+#define COLOR_THRESHOLD 100
+#define CHANGE_COUNT_THRESHOLD 3
+#define AREA_THRESHOLD 20
+unsigned char changeCount[FREENECT_FRAME_H][FREENECT_FRAME_W];
 
 
 int getKinectData() {
@@ -46,8 +53,10 @@ int getKinectData() {
 
 void initBackground() {
 	int i, u, v;
+	
+	PclImage *bgPclArray = (PclImage *)malloc(INIT_LEN * sizeof(PclImage));
 
-	printf("Background initialization: capture images");
+	printf("Background initialization: capture images\n");
 	fflush(stdout);
 
 	for (i=0; i<INIT_LEN; i++) {
@@ -55,14 +64,14 @@ void initBackground() {
 			i--;
 			continue;
 		}
-		buildPclImage(bgPclArray[i], dataRgb, dataDepth);
+		createPclImage(bgPclArray[i], dataRgb, dataDepth);
 		free(dataDepth);
 		free(dataRgb);
 
 		cvWaitKey(10);
 	}
 
-	printf("\tDONE\nBackground initialization: elaboration");
+	printf("Background initialization: capture images - DONE\nBackground initialization: elaboration\n");
 	fflush(stdout);
 
 
@@ -102,11 +111,15 @@ void initBackground() {
 				bgPcl[v][u].valid = 0;
 			}
 
+			
+			changeCount[v][u] = 0;
 		}
 	}
 
-	printf("\t\tDONE\n");
+	free(bgPclArray);
+	printf("Background initialization: elaboration - DONE\n");
 	fflush(stdout);
+	
 
 }
 
@@ -130,6 +143,10 @@ int processKeyPressed(int keyPressed) {
 			case 'x':
 				initBackground();
 				break;
+			case 'c':
+				saveFlag = 1;
+				break;
+				
 		}
 		freenect_sync_set_tilt_degs(freenect_angle);
 	}
@@ -138,8 +155,24 @@ int processKeyPressed(int keyPressed) {
 }
 
 
-int main(int argc, char **argv)
-{
+
+void initWindows() {	
+	cvNamedWindow("MyRGB", CV_WINDOW_AUTOSIZE);
+	cvNamedWindow("Depth", CV_WINDOW_AUTOSIZE);
+	cvNamedWindow("SpaceChange", CV_WINDOW_AUTOSIZE);
+	cvNamedWindow("ColorChange", CV_WINDOW_AUTOSIZE);
+	cvNamedWindow("Graffiti", CV_WINDOW_AUTOSIZE);
+	
+	
+	cvMoveWindow("MyRGB", 0, 0);
+	cvMoveWindow("Depth", 0, 500);
+	cvMoveWindow("SpaceChange", 640, 500);
+	cvMoveWindow("ColorChange", 640, 0);
+	cvMoveWindow("Graffiti", 640, 0);
+	
+}
+
+int main(int argc, char **argv) {
 
 	IplImage *imageMyRgb = cvCreateImage(cvSize(640, 480), IPL_DEPTH_8U, 3);
 	IplImage *imageDepth = cvCreateImage(cvSize(640, 480), IPL_DEPTH_8U, 1);
@@ -147,40 +180,29 @@ int main(int argc, char **argv)
 	IplImage *colorChange = cvCreateImage(cvSize(640, 480), IPL_DEPTH_8U, 1);
 	IplImage *imageGraffiti = cvCreateImage(cvSize(640, 480), IPL_DEPTH_8U, 1);
 
-	cvNamedWindow("MyRGB", CV_WINDOW_AUTOSIZE);
-	cvNamedWindow("Depth", CV_WINDOW_AUTOSIZE);
-	cvNamedWindow("SpaceChange", CV_WINDOW_AUTOSIZE);
-	cvNamedWindow("ColorChange", CV_WINDOW_AUTOSIZE);
-	cvNamedWindow("Graffiti", CV_WINDOW_AUTOSIZE);
-
-
-	cvMoveWindow("MyRGB", 0, 0);
-	cvMoveWindow("Depth", 0, 500);
-	cvMoveWindow("SpaceChange", 640, 500);
-	cvMoveWindow("ColorChange", 640, 0);
-	cvMoveWindow("Graffiti", 1280, 0);
-
-
+	
+//	freenect_sync_set_tilt_degs(freenect_angle);
+ 	freenect_sync_set_led(LED_RED);
+	
+	initWindows();
 	initDepthLut();
 	initUndistortMaps();
-
- 	freenect_sync_set_tilt_degs(freenect_angle);
- 	freenect_sync_set_led(LED_RED);
-
  	initBackground();
-
+	
 	while (processKeyPressed(cvWaitKey(10))) {
 
 
 		if (getKinectData()<0)
 			continue;
 
-		buildPclImage(curPcl, dataRgb, dataDepth);
+		createPclImage(curPcl, dataRgb, dataDepth);
 
 		free(dataDepth);
 		free(dataRgb);
-
-
+		
+		rgbImage(curPcl, imageMyRgb);
+		depthImage(curPcl, imageDepth);
+		
 		cvZero(spaceChange);
 		cvZero(colorChange);
 		cvZero(imageGraffiti);
@@ -192,34 +214,132 @@ int main(int argc, char **argv)
 
 					int colorChanged = 0;
 					int spaceChanged = 0;
-					if(spaceDistance(bgPcl[v][u], curPcl[v][u]) > 0.10) {
+					if(spaceDistance(bgPcl[v][u], curPcl[v][u]) > DISTANCE_THRESHOLD) {
 						((unsigned char *) spaceChange->imageData)[v*FREENECT_FRAME_W + u] = 255;
 						spaceChanged = 1;
 					}
 
-					if(colorDistance(bgPcl[v][u], curPcl[v][u]) > 100) {
+					if(colorDistance(bgPcl[v][u], curPcl[v][u]) > COLOR_THRESHOLD) {
 						((unsigned char *) colorChange->imageData)[v*FREENECT_FRAME_W + u] = 255;
 						colorChanged = 1;
 					}
 
 					if (colorChanged && !spaceChanged) {
+						changeCount[v][u]++;
+					}
+					else {
+						changeCount[v][u] = 0;
+					}
+					
+					if(changeCount[v][u] > CHANGE_COUNT_THRESHOLD) {
 						((unsigned char *) imageGraffiti->imageData)[v*FREENECT_FRAME_W + u] = 255;
 					}
+					else {
+						((unsigned char *) imageGraffiti->imageData)[v*FREENECT_FRAME_W + u] = 0;
+					}
+					
 				}
 			}
 		}
-
-		rgbImage(curPcl, imageMyRgb);
-		depthImage(curPcl, imageDepth);
-
-
+		
+		
+		// labeling
+		unsigned char label = 255;
+		for(v=0; v<FREENECT_FRAME_H; v++) {
+			for(u=0; u<FREENECT_FRAME_W; u++) {
+				if (((unsigned char *) imageGraffiti->imageData)[v*FREENECT_FRAME_W + u] == 255) {
+					label--;
+					
+					((unsigned char *) imageGraffiti->imageData)[v*FREENECT_FRAME_W + u] = label;
+					int i,j,m,n,again;
+					
+					do {
+						again = 0;
+						for(j=0; j<FREENECT_FRAME_H; j++) {
+							for(i=0; i<FREENECT_FRAME_W; i++) {
+								if (((unsigned char *) imageGraffiti->imageData)[j*FREENECT_FRAME_W + i] == label) {
+									for (n=j-1; n<=j+1; n++) {
+										for (m=i-1; m<=i+1; m++) {
+											if (((unsigned char *) imageGraffiti->imageData)[n*FREENECT_FRAME_W + m] == 255) {
+												((unsigned char *) imageGraffiti->imageData)[n*FREENECT_FRAME_W + m] = label;
+												again = 1;
+											}
+										}
+									}
+								}
+							}
+						}
+						
+						for(j=FREENECT_FRAME_H-1; j>=0; j--) {
+							for(i=FREENECT_FRAME_W-1; i>=0; i--) {
+								if (((unsigned char *) imageGraffiti->imageData)[j*FREENECT_FRAME_W + i] == label) {
+									for (n=j-1; n<=j+1; n++) {
+										for (m=i-1; m<=i+1; m++) {
+											if (((unsigned char *) imageGraffiti->imageData)[n*FREENECT_FRAME_W + m] == 255) {
+												((unsigned char *) imageGraffiti->imageData)[n*FREENECT_FRAME_W + m] = label;
+												again = 1;
+											}
+										}
+									}
+								}
+							}
+						}
+						
+					} while (again);
+					
+				}
+			}
+		}
+		
+		int i, uMin, uMax, vMin, vMax, area;
+		int graffitiCount = 0;
+		for (i=254; i>=label; i--) {
+			area = 0;
+			uMin = FREENECT_FRAME_W;
+			uMax = 0;
+			vMin = FREENECT_FRAME_H;
+			vMax = 0;
+			for(v=0; v<FREENECT_FRAME_H; v++) {
+				for(u=0; u<FREENECT_FRAME_W; u++) {
+					if (((unsigned char *) imageGraffiti->imageData)[v*FREENECT_FRAME_W + u] == i) {
+						area++;
+						if (v > vMax) vMax = v;
+						if (v < vMin) vMin = v;
+						if (u > uMax) uMax = u;
+						if (u < uMin) uMin = u;
+					}
+				}
+			}
+			if (area > AREA_THRESHOLD) {
+				cvRectangle(imageMyRgb, cvPoint(uMin, vMin), cvPoint(uMax, vMax), cvScalar(0, 255, 0, 0), 2, 8, 0);
+				graffitiCount++;
+			}
+		}
+		
+		CvFont font;
+		cvInitFont(&font, CV_FONT_HERSHEY_PLAIN, 1, 1, 0, 1, 8);
+		
+		char outString[50];
+		sprintf(outString, "%lu - Graffiti count: %d", timestamp, graffitiCount);
+		cvPutText(imageMyRgb, outString, cvPoint(30,30), &font, cvScalar(0,255, 0, 0));
+	
+		
 		cvShowImage("MyRGB", imageMyRgb);
-		cvShowImage("Depth", imageDepth);
-		cvShowImage("ColorChange", colorChange);
-		cvShowImage("SpaceChange", spaceChange);
+		//cvShowImage("Depth", imageDepth);
+//		cvShowImage("ColorChange", colorChange);
+//		cvShowImage("SpaceChange", spaceChange);
 		cvShowImage("Graffiti", imageGraffiti);
+		
+		
+		if (saveFlag) {
+			saveFlag = 0;
+			char fileName[30];
+			sprintf(fileName, "img-%lu.jpg", timestamp);
+			cvSaveImage(fileName, imageMyRgb, NULL);
+		}
 
     }
+	
 
 	freenect_sync_set_led(LED_YELLOW);
 
@@ -229,5 +349,7 @@ int main(int argc, char **argv)
 
     freenect_sync_stop();
 	freenect_sync_set_led(LED_BLINK_GREEN);
+	
+	return 1;
 
 }

@@ -45,7 +45,7 @@ unsigned char metersToGreyscale(float meters) {
 		return round(((meters - minThres) * 255/(maxThres - minThres)));
 }
 
-
+/*
 int mapDepthToRgb(int depthU, int depthV, double depthPointZ) {
 
 	static const double fx_d = 1.0 / 570.55841064;
@@ -79,6 +79,7 @@ int mapDepthToRgb(int depthU, int depthV, double depthPointZ) {
 	int rgbV = round((rgbPointY * fy_rgb * invZ) + cy_rgb);
 	int rgbIndex = FREENECT_FRAME_W*rgbV + rgbU;
 }
+ */
 
 
 static CvMat *rgbIntrinsic;
@@ -114,7 +115,7 @@ void initUndistortMaps() {
 }
 
 
-int buildPclImage(PclImage dest, char *dataRgb, uint16_t *dataDepth) {
+int createPclImage(PclImage dest, char *dataRgb, uint16_t *dataDepth) {
 
 	IplImage *rgbImage = cvCreateImageHeader(cvSize(FREENECT_FRAME_W, FREENECT_FRAME_H ), IPL_DEPTH_8U, 3);
 	IplImage *rgbImageUndist = cvCreateImage(cvSize(FREENECT_FRAME_W, FREENECT_FRAME_H ), IPL_DEPTH_8U, 3);
@@ -180,6 +181,11 @@ int buildPclImage(PclImage dest, char *dataRgb, uint16_t *dataDepth) {
 
 		}
 	}
+	
+	cvReleaseImageHeader(&rgbImage);
+	cvReleaseImage(&rgbImageUndist);
+	cvReleaseImageHeader(&depthImage);
+	cvReleaseImage(&depthImageUndist);
 
 	return 1;
 }

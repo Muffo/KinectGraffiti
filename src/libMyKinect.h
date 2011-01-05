@@ -30,7 +30,8 @@ typedef struct {
 
 typedef Point3d PclImage[480][640];
 
-int buildPclImage(PclImage dest, char *dataRgb, uint16_t *dataDepth);
+int createPclImage(PclImage dest, char *dataRgb, uint16_t *dataDepth);
+void initUndistortMaps();
 void initDepthLut();
 void rgbImage(PclImage src, IplImage *dst);
 void depthImage(PclImage src, IplImage *dst);
