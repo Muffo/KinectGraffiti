@@ -11,17 +11,9 @@
 #include <math.h>
 #include <opencv/cv.h>
 #include <opencv/highgui.h>
-#include <libfreenect/libfreenect.h>
-#include "libfreenect_sync.h"
 #include "libMyKinect.h"
 
-freenect_context *f_ctx;
-freenect_device *f_dev;
-char *dataRgb;
-uint16_t *dataDepth;
-uint32_t timestamp;
-int saveFlag;
-
+int saveFlag;		
 double freenect_angle = 0;
 
 PclImage curPcl;
@@ -32,24 +24,14 @@ PclImage bgPcl;
 
 
 #define DISTANCE_THRESHOLD 0.04
-#define COLOR_THRESHOLD 100
-#define CHANGE_COUNT_THRESHOLD 3
-#define AREA_THRESHOLD 20
+#define COLOR_RGB_THRESHOLD 100
+#define COLOR_UV_THRESHOLD 0.1
+#define CHANGE_COUNT_THRESHOLD 5
+#define AREA_THRESHOLD 30
 unsigned char changeCount[FREENECT_FRAME_H][FREENECT_FRAME_W];
 
 
-int getKinectData() {
-	if (freenect_sync_get_rgb(&dataRgb, &timestamp) < 0) {
-		printf("Errore: freenect_sync_get_rgb\n");
-		return -1;
-	}
 
-	if (freenect_sync_get_depth(&dataDepth, &timestamp) < 0) {
-		printf("Errore: freenect_sync_get_depth\n");
-		return -1;
-	}
-	return 0;
-}
 
 void initBackground() {
 	int i, u, v;
@@ -60,14 +42,7 @@ void initBackground() {
 	fflush(stdout);
 
 	for (i=0; i<INIT_LEN; i++) {
-		if (getKinectData()<0) {
-			i--;
-			continue;
-		}
-		createPclImage(bgPclArray[i], dataRgb, dataDepth);
-		free(dataDepth);
-		free(dataRgb);
-
+		createPclImage(bgPclArray[i]);
 		cvWaitKey(10);
 	}
 
@@ -85,6 +60,9 @@ void initBackground() {
 			float xAcc = 0;
 			float yAcc = 0;
 			float zAcc = 0;
+			float YAcc = 0;
+			float UAcc = 0;
+			float VAcc = 0;
 
 			for (i=0; i<INIT_LEN; i++) {
 				if (bgPclArray[i][v][u].valid) {
@@ -95,6 +73,9 @@ void initBackground() {
 					xAcc += bgPclArray[i][v][u].x;
 					yAcc += bgPclArray[i][v][u].y;
 					zAcc += bgPclArray[i][v][u].z;
+					YAcc += bgPclArray[i][v][u].Y;
+					UAcc += bgPclArray[i][v][u].U;
+					VAcc += bgPclArray[i][v][u].V;
 				}
 			}
 
@@ -106,6 +87,9 @@ void initBackground() {
 				bgPcl[v][u].x = xAcc/validCount;
 				bgPcl[v][u].y = yAcc/validCount;
 				bgPcl[v][u].z = zAcc/validCount;
+				bgPcl[v][u].Y = YAcc/validCount;
+				bgPcl[v][u].U = UAcc/validCount;
+				bgPcl[v][u].V = VAcc/validCount;
 			}
 			else {
 				bgPcl[v][u].valid = 0;
@@ -133,12 +117,14 @@ int processKeyPressed(int keyPressed) {
 				if (freenect_angle > 30) {
 					freenect_angle = 30;
 				}
+				freenect_sync_set_tilt_degs(freenect_angle);
 				break;
 			case 's':
 				freenect_angle--;
 				if (freenect_angle < -30) {
 					freenect_angle = -30;
 				}
+				freenect_sync_set_tilt_degs(freenect_angle);
 				break;
 			case 'x':
 				initBackground();
@@ -146,11 +132,8 @@ int processKeyPressed(int keyPressed) {
 			case 'c':
 				saveFlag = 1;
 				break;
-				
 		}
-		freenect_sync_set_tilt_degs(freenect_angle);
 	}
-
 	return 1;
 }
 
@@ -190,16 +173,9 @@ int main(int argc, char **argv) {
  	initBackground();
 	
 	while (processKeyPressed(cvWaitKey(10))) {
-
-
-		if (getKinectData()<0)
-			continue;
-
-		createPclImage(curPcl, dataRgb, dataDepth);
-
-		free(dataDepth);
-		free(dataRgb);
 		
+		uint32_t timestamp = createPclImage(curPcl);
+	
 		rgbImage(curPcl, imageMyRgb);
 		depthImage(curPcl, imageDepth);
 		
@@ -219,7 +195,7 @@ int main(int argc, char **argv) {
 						spaceChanged = 1;
 					}
 
-					if(colorDistance(bgPcl[v][u], curPcl[v][u]) > COLOR_THRESHOLD) {
+					if(colorUvDistance(bgPcl[v][u], curPcl[v][u]) > COLOR_UV_THRESHOLD) {
 						((unsigned char *) colorChange->imageData)[v*FREENECT_FRAME_W + u] = 255;
 						colorChanged = 1;
 					}
@@ -241,6 +217,8 @@ int main(int argc, char **argv) {
 				}
 			}
 		}
+		
+		cvDilate(imageGraffiti, imageGraffiti, NULL, 1);
 		
 		
 		// labeling
@@ -325,7 +303,7 @@ int main(int argc, char **argv) {
 	
 		
 		cvShowImage("MyRGB", imageMyRgb);
-		//cvShowImage("Depth", imageDepth);
+//		cvShowImage("Depth", imageDepth);
 //		cvShowImage("ColorChange", colorChange);
 //		cvShowImage("SpaceChange", spaceChange);
 		cvShowImage("Graffiti", imageGraffiti);
