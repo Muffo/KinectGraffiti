@@ -130,11 +130,11 @@ int createPclImage(PclImage dest) {
     IplImage *depthImageUndist = cvCreateImage(cvSize(FREENECT_FRAME_W, FREENECT_FRAME_H ), IPL_DEPTH_16U, 1);
     cvSetData(depthImage, dataDepth, FREENECT_FRAME_W*2);
 
-	cvRemap(rgbImage, rgbImageUndist, rgbMapX, rgbMapY, CV_INTER_LINEAR+CV_WARP_FILL_OUTLIERS, cvScalarAll(255));
-	cvRemap(depthImage, depthImageUndist, irMapX, irMapY, CV_INTER_LINEAR+CV_WARP_FILL_OUTLIERS, cvScalarAll(255));
+	// cvRemap(rgbImage, rgbImageUndist, rgbMapX, rgbMapY, CV_INTER_LINEAR+CV_WARP_FILL_OUTLIERS, cvScalarAll(255));
+	// cvRemap(depthImage, depthImageUndist, irMapX, irMapY, CV_INTER_LINEAR+CV_WARP_FILL_OUTLIERS, cvScalarAll(255));
 
 
-	// TODO: rimettere undist
+	// problems with undistort images
 	
 	int u, v;
 	for(v=0; v<FREENECT_FRAME_H; v++) {

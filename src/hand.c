@@ -12,14 +12,34 @@
 #include <opencv/cv.h>
 #include <opencv/highgui.h>
 #include "libMyKinect.h"
+#include "eig3.h"
+
+#define INITIAL_SAMPLE_SIZE 20
+#define SAMPLE_VEC_SIZE 100000
+
+#define GLOBAL_SKIN_BLUE 207
+#define GLOBAL_SKIN_GREEN 208
+#define GLOBAL_SKIN_RED 239
+
+#define GLOBAL_SKIN_COLOR_THRESHOLD 200
+
+#define DISTANCE_THRESHOLD 0.2
+#define SPEC_COLOR_THRESHOLD 10
+#define CHANGE_COUNT_THRESHOLD 3
+#define AREA_THRESHOLD 20
+
 
 int saveFlag;
 int displayGuideFlag = 1;
-int sampleSize = 30;
+int sampleSize = INITIAL_SAMPLE_SIZE;
 int grabSkinSampleFlag = 0;
-int handFlag = 0;
+int handDetectionFlag = 0;
 
-int specSkinColorThreshold = 10;
+int specSkinColorThreshold = 8;
+
+Point3d sampleVec[SAMPLE_VEC_SIZE];
+int sampleVecIndex = 0;
+
 
 double freenect_angle = 0;
 
@@ -28,29 +48,20 @@ PclImage handPcl;
 
 
 
-#define SAMPLE_SIZE_STEP 3
-#define COLOR_THRESHOLD_STEP 3
 
-#define GLOBAL_SKIN_BLUE 207
-#define GLOBAL_SKIN_GREEN 208
-#define GLOBAL_SKIN_RED 239
-
-#define GLOBAL_SKIN_COLOR_THRESHOLD 200
-
-#define DISTANCE_THRESHOLD 0.1
-#define SPEC_COLOR_THRESHOLD 10
-#define CHANGE_COUNT_THRESHOLD 3
-#define AREA_THRESHOLD 20
 unsigned char changeCount[FREENECT_FRAME_H][FREENECT_FRAME_W];
 
-int invertMat(double A[3][3], double X[3][3]) {
-	
-	
-	double det = 0;
-	
+double invertMat(double A[3][3], double X[3][3]) {
+
+	double det = 0;	
+
 	det += A[0][0] * (A[1][1] * A[2][2] - A[1][2] * A[2][1]);
 	det += A[0][1] * (A[1][2] * A[2][0] - A[2][2] * A[1][0]);
 	det += A[0][2] * (A[1][0] * A[2][1] - A[1][1] * A[2][0]);
+	
+	if(det==0) {
+		return 0;
+	}
 
 	X[0][0] = (A[1][1] * A[2][2] - A[1][2] * A[2][1]) / det;
 	X[1][0] = (A[1][2] * A[2][0] - A[1][0] * A[2][2]) / det;
@@ -64,38 +75,7 @@ int invertMat(double A[3][3], double X[3][3]) {
 	X[1][2] = (A[1][2] * A[1][0] - A[0][0] * A[1][2]) / det;
 	X[2][2] = (A[0][0] * A[1][1] - A[0][1] * A[1][0]) / det;
 
-
-//	int i, j;
-//	printf("\n========== Matrix A ==========================================\n");     
-//	for(i=0;i<3;i++) {
-//		printf("\n");
-//		for(j=0;j<3;j++) {     
-//			printf(" A[%d][%d]= %.4f  ",i,j,A[i][j]);
-//		}
-//	}
-//	printf("\n \n");
-//	
-//	printf("The determinant of matrix A is %f ", det);
-	
-	if(det==0) {
-		//printf("Division by 0, not good!\n");
-//		printf("=====================================================================\n\n");
-		return 0;
-	}
-	
-
-//	printf("\n========== The inverse matrix of A ==========\n");
-//	for(i=0;i<3;i++)
-//	{     printf("\n");
-//		for(j=0;j<3;j++)
-//		{     
-//			printf(" X[%d][%d]= %.4f",i,j,X[i][j]);
-//			
-//		}
-//	}
-//	printf("\n===========================================================\n\n");
-	
-	return 1;	
+	return det;	
 }
 
 float distMahalanobis(Point3d point, double meanColorVec[], double inverseCovarMat[3][3]) {
@@ -138,23 +118,12 @@ int processKeyPressed(int keyPressed) {
 			case 'd':
 				displayGuideFlag = !displayGuideFlag;
 				break;
-			case 'f':
-				if (sampleSize > SAMPLE_SIZE_STEP) 
-					sampleSize -= SAMPLE_SIZE_STEP;
-	
-				break;
-			case 'g':
-				sampleSize += SAMPLE_SIZE_STEP;
-				break;
-			case 't':
-				if (specSkinColorThreshold > COLOR_THRESHOLD_STEP)
-					specSkinColorThreshold -= COLOR_THRESHOLD_STEP;
-				break;
-			case 'y':
-				specSkinColorThreshold += COLOR_THRESHOLD_STEP;
-				break;
 			case 'x':
 				grabSkinSampleFlag = 1;
+				break;
+			case 'z':
+				sampleVecIndex = 0;
+				handDetectionFlag = 0;
 				break;
 			case 'r':
 				// resetSample
@@ -176,7 +145,12 @@ void initWindows() {
 	cvMoveWindow("Depth", 0, 500);
 	cvMoveWindow("Hand", 640, 0);
 	
+	cvCreateTrackbar("SampleSize", "MyRGB", &sampleSize, 100, NULL);
+	cvCreateTrackbar("Threshold", "Hand", &specSkinColorThreshold, 30, NULL);
 }
+
+
+#pragma mark -
 
 int main(int argc, char **argv) {
 
@@ -184,9 +158,16 @@ int main(int argc, char **argv) {
 	IplImage *imageDepth = cvCreateImage(cvSize(640, 480), IPL_DEPTH_8U, 1);
 	IplImage *imageHand = cvCreateImage(cvSize(640, 480), IPL_DEPTH_8U, 3);
 	
-	double covarMat[3][3];
-	double covarMatInv[3][3];
+	double colorCovarMat[3][3];
+	double colorCovarMatInv[3][3];
 	double meanColorVec[3];
+	
+	
+	double posCovarMat[3][3];
+	double posCovarMatEigVec[3][3];
+	double posCovarMatEigVal[3];
+
+	
 	
 	CvFont font;
 	cvInitFont(&font, CV_FONT_HERSHEY_PLAIN, 1, 1, 0, 1, 8);
@@ -200,6 +181,7 @@ int main(int argc, char **argv) {
 	initWindows();
 	initDepthLut();
 	initUndistortMaps();
+	
 	
 	while (processKeyPressed(cvWaitKey(10))) {
 		
@@ -283,7 +265,7 @@ int main(int argc, char **argv) {
 		
 		int i,j,m,n,again;
 		
-		if (handFlag) {
+		if (handDetectionFlag) {        // hand sample
 			do {
 				
 				again = 0;
@@ -293,7 +275,7 @@ int main(int argc, char **argv) {
 							for (n=j-1; n<=j+1; n++) {
 								for (m=i-1; m<=i+1; m++) {
 									if (!handPcl[n][m].valid && curPcl[n][m].valid && 
-											distMahalanobis(curPcl[n][m], meanColorVec, covarMatInv) < specSkinColorThreshold ) {
+											distMahalanobis(curPcl[n][m], meanColorVec, colorCovarMatInv) < specSkinColorThreshold ) {
 										
 										handPcl[n][m] = curPcl[n][m];
 										again = 1;
@@ -310,7 +292,7 @@ int main(int argc, char **argv) {
 							for (n=j-1; n<=j+1; n++) {
 								for (m=i-1; m<=i+1; m++) {
 									if (!handPcl[n][m].valid && curPcl[n][m].valid && 
-											distMahalanobis(curPcl[n][m], meanColorVec, covarMatInv) < SPEC_COLOR_THRESHOLD ) {
+											distMahalanobis(curPcl[n][m], meanColorVec, colorCovarMatInv) < specSkinColorThreshold ) {
 			
 										handPcl[n][m] = curPcl[n][m];
 										again = 1;
@@ -321,26 +303,108 @@ int main(int argc, char **argv) {
 					}
 				} 
 				
-				
 			} while (again);
+			
+			
+			double meanX = 0;						// position covar matrix
+			double meanY = 0;
+			double meanZ = 0;
+			int count = 0;
+			
+			for(j=0; j<FREENECT_FRAME_H; j++) {
+				for(i=0; i<FREENECT_FRAME_W; i++) {
+					if (handPcl[j][i].valid) {
+						meanX += handPcl[j][i].x;
+						meanY += handPcl[j][i].y;
+						meanZ += handPcl[j][i].z;
+						count++;
+					}
+				}
+			}
+			
+			meanX = meanX / count;
+			meanY = meanY / count;
+			meanZ = meanZ / count;
+			
+			
+			for (i=0; i<3; i++) {
+				for (j=0; j<3; j++) {
+					posCovarMat[i][j] = 0;
+				}
+			}
+			
+			
+			for(j=0; j<FREENECT_FRAME_H; j++) {
+				for(i=0; i<FREENECT_FRAME_W; i++) {
+					if (handPcl[j][i].valid) {
+						posCovarMat[0][0] += (handPcl[j][i].x - meanX)*(handPcl[j][i].x - meanX);
+						posCovarMat[0][1] += (handPcl[j][i].x - meanX)*(handPcl[j][i].y - meanY);
+						posCovarMat[0][2] += (handPcl[j][i].x - meanX)*(handPcl[j][i].z - meanZ);
+						
+						posCovarMat[1][0] += (handPcl[j][i].y - meanY)*(handPcl[j][i].x - meanX);
+						posCovarMat[1][1] += (handPcl[j][i].y - meanY)*(handPcl[j][i].y - meanY);
+						posCovarMat[1][2] += (handPcl[j][i].y - meanY)*(handPcl[j][i].z - meanZ);
+						
+						posCovarMat[2][0] += (handPcl[j][i].z - meanZ)*(handPcl[j][i].x - meanX);
+						posCovarMat[2][1] += (handPcl[j][i].z - meanZ)*(handPcl[j][i].y - meanY);
+						posCovarMat[2][2] += (handPcl[j][i].z - meanZ)*(handPcl[j][i].z - meanZ);
+					}
+				}
+			}
+			
+			for (i=0; i<3; i++) {
+				for (j=0; j<3; j++) {
+					posCovarMat[i][j] = posCovarMat[i][j] / count;
+				}
+			}
+			
+			eigen_decomposition(posCovarMat, posCovarMatEigVec, posCovarMatEigVal);
+
+			
+			/*
+			printf("\n\n========== Pos Covar =========");
+			for(i=0;i<3;i++) {
+				printf("\n{");
+				for(j=0;j<3;j++) {     
+					printf("%f",i,j, posCovarMat[i][j]);
+					if (j<2) printf(", ");
+				}
+				printf("}");
+			}
+			*/
+			
+			
+			
+			/*
+			printf("\n\n========== Pos Eigen Vec =========");
+			for(i=0;i<3;i++) {
+				printf("\n{");
+				for(j=0;j<3;j++) {     
+					printf("%f",i,j, posCovarMatEigVec[i][j]);
+					if (j<2) printf(", ");
+				}
+				printf("}");
+			}
+			 */
 			
 			float barycX, barycY, barycZ;
 			barycenter(handPcl, &barycX, &barycY, &barycZ);
 			
 			rgbImage(handPcl, imageHand);
 			
-			sprintf(outString, "X: %.4f Y: %.4f  Z: %.4f",  barycX, barycY, barycZ);
-			cvPutText(imageHand, outString, cvPoint(30,30), &font, cvScalar(0,200, 0, 0));		
+			sprintf(outString, "Barycenter: X: %.4f Y: %.4f  Z: %.4f",  barycX, barycY, barycZ);
+			cvPutText(imageHand, outString, cvPoint(30,30), &font, cvScalar(0,200, 0, 0));
 			
-			sprintf(outString, "Skin Color Threshold: %d",   specSkinColorThreshold);
-			cvPutText(imageHand, outString, cvPoint(30,50), &font, cvScalar(0,200, 0, 0));			
+			sprintf(outString, "Normal Vec: X: %.4f Y: %.4f  Z: %.4f",  
+					posCovarMatEigVec[2][0] > 0 ? posCovarMatEigVec[0][0] : - posCovarMatEigVec[0][0], 
+					posCovarMatEigVec[2][0] > 0 ? posCovarMatEigVec[1][0] : - posCovarMatEigVec[1][0], 
+					posCovarMatEigVec[2][0] > 0 ? posCovarMatEigVec[2][0] : - posCovarMatEigVec[2][0]);
+			cvPutText(imageHand, outString, cvPoint(30,50), &font, cvScalar(0,200, 0, 0));
 			
-			
+			// sprintf(outString, "Skin Color Threshold: %d",   specSkinColorThreshold);
+			// cvPutText(imageHand, outString, cvPoint(30,50), &font, cvScalar(0,200, 0, 0));			
 			
 		}
-		
-		
-		
 		
 		rgbImage(curPcl, imageMyRgb);
 		
@@ -355,66 +419,94 @@ int main(int argc, char **argv) {
 			double meanY = 0;
 			double meanU = 0;
 			double meanV = 0;
-			int count = 0;
+			
 			
 			for (n=(seedSkinY-sampleSize); n<=(seedSkinY+sampleSize); n++) {
 				for (m=(seedSkinX-sampleSize); m<=(seedSkinX+sampleSize); m++) {
-					if (curPcl[n][m].valid) {
-						meanY += curPcl[n][m].Y;
-						meanU += curPcl[n][m].U;
-						meanV += curPcl[n][m].V;
-						count++;
+					if (curPcl[n][m].valid && sampleVecIndex < SAMPLE_VEC_SIZE) {
+						sampleVec[sampleVecIndex] = curPcl[n][m]; 
+						sampleVecIndex++;
 						
 						// printf("Y: %f  U: %f  V: %f\n", curPcl[n][m].Y, curPcl[n][m].U, curPcl[n][m].V);
 					}
 				}
 			}
 			
-			meanY = meanY / count;
-			meanU = meanU / count;
-			meanV = meanV / count;
+			for (i=0; i<sampleVecIndex; i++) {
+				meanY += sampleVec[i].Y;
+				meanU += sampleVec[i].U;
+				meanV += sampleVec[i].V;
+			}
+			
+			meanY = meanY / sampleVecIndex;
+			meanU = meanU / sampleVecIndex;
+			meanV = meanV / sampleVecIndex;
 			
 			
 			for (i=0; i<3; i++) {
 				for (j=0; j<3; j++) {
-					covarMat[i][j] = 0;
+					colorCovarMat[i][j] = 0;
 				}
 			}
 			
 			
 			
-			for (n=seedSkinY-sampleSize; n<=seedSkinY+sampleSize; n++) {
-				for (m=seedSkinX-sampleSize; m<=seedSkinX+sampleSize; m++) {
-					if (curPcl[n][m].valid) {
-						covarMat[0][0] += (curPcl[n][m].Y - meanY)*(curPcl[n][m].Y - meanY);
-						covarMat[0][1] += (curPcl[n][m].Y - meanY)*(curPcl[n][m].U - meanU);
-						covarMat[0][2] += (curPcl[n][m].Y - meanY)*(curPcl[n][m].V - meanV);
-						
-						covarMat[1][0] += (curPcl[n][m].U - meanU)*(curPcl[n][m].Y - meanY);
-						covarMat[1][1] += (curPcl[n][m].U - meanU)*(curPcl[n][m].U - meanU);
-						covarMat[1][2] += (curPcl[n][m].U - meanU)*(curPcl[n][m].V - meanV);
-						
-						covarMat[2][0] += (curPcl[n][m].V - meanV)*(curPcl[n][m].Y - meanY);
-						covarMat[2][1] += (curPcl[n][m].V - meanV)*(curPcl[n][m].U - meanU);
-						covarMat[2][2] += (curPcl[n][m].V - meanV)*(curPcl[n][m].V - meanV);
-					}
-				}
+			for (i=0; i<sampleVecIndex; i++) {
+				colorCovarMat[0][0] += (sampleVec[i].Y - meanY)*(sampleVec[i].Y - meanY);
+				colorCovarMat[0][1] += (sampleVec[i].Y - meanY)*(sampleVec[i].U - meanU);
+				colorCovarMat[0][2] += (sampleVec[i].Y - meanY)*(sampleVec[i].V - meanV);
+				
+				colorCovarMat[1][0] += (sampleVec[i].U - meanU)*(sampleVec[i].Y - meanY);
+				colorCovarMat[1][1] += (sampleVec[i].U - meanU)*(sampleVec[i].U - meanU);
+				colorCovarMat[1][2] += (sampleVec[i].U - meanU)*(sampleVec[i].V - meanV);
+				
+				colorCovarMat[2][0] += (sampleVec[i].V - meanV)*(sampleVec[i].Y - meanY);
+				colorCovarMat[2][1] += (sampleVec[i].V - meanV)*(sampleVec[i].U - meanU);
+				colorCovarMat[2][2] += (sampleVec[i].V - meanV)*(sampleVec[i].V - meanV);
 			}
 			
 			for (i=0; i<3; i++) {
 				for (j=0; j<3; j++) {
-					covarMat[i][j] = covarMat[i][j] /count;
+					colorCovarMat[i][j] = colorCovarMat[i][j] / sampleVecIndex;
 				}
 			}
 			
 	
 			
-			
-			if (invertMat(covarMat, covarMatInv)) {
-				handFlag = 1;
+			double detCovarMat;
+			if (detCovarMat = invertMat(colorCovarMat, colorCovarMatInv)) {
+				handDetectionFlag = 1;
 				meanColorVec[0] = meanY;
 				meanColorVec[1] = meanU;
 				meanColorVec[2] = meanV;
+				
+				
+				
+
+				printf("SampleSize = %d\n", sampleVecIndex);
+				printf("Y = %f\tU = %fV = %f\n", meanY, meanU, meanV);
+								
+				
+				printf("\n\n========== Covar =========");
+				for(i=0;i<3;i++) {
+					printf("\n");
+					for(j=0;j<3;j++) {     
+						printf(" C[%d][%d]= %f",i,j, colorCovarMat[i][j]);
+					}
+				}
+				printf("\n===========================================================\n\n");
+				
+				printf("det = %f", detCovarMat);
+				
+				printf("\n========== CovarInv ==========\n");
+				for(i=0;i<3;i++) {
+					printf("\n");
+					for(j=0;j<3;j++) {     
+						printf(" C[%d][%d]= %f",i,j, colorCovarMatInv[i][j]);
+					}
+				}
+				printf("\n===========================================================\n\n");
+				
 			}
 		}
 		
