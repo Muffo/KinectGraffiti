@@ -11,8 +11,11 @@
 #include <math.h>
 #include <opencv/cv.h>
 #include <opencv/highgui.h>
+#include <ApplicationServices/ApplicationServices.h>
+#include <unistd.h>
 #include "libMyKinect.h"
 #include "eig3.h"
+#include "gestureManager.h"
 
 #define INITIAL_SAMPLE_SIZE 20
 #define SAMPLE_VEC_SIZE 100000
@@ -34,6 +37,7 @@ int displayGuideFlag = 1;
 int sampleSize = INITIAL_SAMPLE_SIZE;
 int grabSkinSampleFlag = 0;
 int handDetectionFlag = 0;
+int mouseFlag = 0;
 
 int specSkinColorThreshold = 8;
 
@@ -125,14 +129,16 @@ int processKeyPressed(int keyPressed) {
 				sampleVecIndex = 0;
 				handDetectionFlag = 0;
 				break;
-			case 'r':
-				// resetSample
+			case 'm':
+				mouseFlag = !mouseFlag;
 				break;
 		}
 	}
 
 	return 1;
 }
+
+
 
 
 void initWindows() {	
@@ -390,16 +396,22 @@ int main(int argc, char **argv) {
 			float barycX, barycY, barycZ;
 			barycenter(handPcl, &barycX, &barycY, &barycZ);
 			
+			double normVecX = posCovarMatEigVec[2][0] > 0 ? posCovarMatEigVec[0][0] : - posCovarMatEigVec[0][0]; 
+			double normVecY = posCovarMatEigVec[2][0] > 0 ? posCovarMatEigVec[1][0] : - posCovarMatEigVec[1][0];
+			double normVecZ = posCovarMatEigVec[2][0] > 0 ? posCovarMatEigVec[2][0] : - posCovarMatEigVec[2][0];
+			
+			if (mouseFlag)
+				setHandPosition(barycX, barycY, barycZ, normVecX, normVecY, normVecZ);
+			
+			
 			rgbImage(handPcl, imageHand);
 			
 			sprintf(outString, "Barycenter: X: %.4f Y: %.4f  Z: %.4f",  barycX, barycY, barycZ);
 			cvPutText(imageHand, outString, cvPoint(30,30), &font, cvScalar(0,200, 0, 0));
 			
-			sprintf(outString, "Normal Vec: X: %.4f Y: %.4f  Z: %.4f",  
-					posCovarMatEigVec[2][0] > 0 ? posCovarMatEigVec[0][0] : - posCovarMatEigVec[0][0], 
-					posCovarMatEigVec[2][0] > 0 ? posCovarMatEigVec[1][0] : - posCovarMatEigVec[1][0], 
-					posCovarMatEigVec[2][0] > 0 ? posCovarMatEigVec[2][0] : - posCovarMatEigVec[2][0]);
+			sprintf(outString, "Normal Vec: X: %.4f Y: %.4f  Z: %.4f", normVecX, normVecY, normVecZ);
 			cvPutText(imageHand, outString, cvPoint(30,50), &font, cvScalar(0,200, 0, 0));
+		
 			
 			// sprintf(outString, "Skin Color Threshold: %d",   specSkinColorThreshold);
 			// cvPutText(imageHand, outString, cvPoint(30,50), &font, cvScalar(0,200, 0, 0));			

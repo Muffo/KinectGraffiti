@@ -19,7 +19,6 @@ double freenect_angle = 0;
 PclImage curPcl;
 PclImage bgPcl;
 
-
 #define INIT_LEN 10
 
 

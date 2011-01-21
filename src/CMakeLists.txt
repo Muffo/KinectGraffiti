@@ -1,13 +1,23 @@
-cmake_minimum_required(VERSION 2.8)
+CMAKE_MINIMUM_REQUIRED(VERSION 2.8)
 
-project(KinectProject)
-add_executable(graffiti graffiti.c libMyKinect.c libfreenect_sync.c)
-add_executable(hand hand.c libMyKinect.c eig3.c libfreenect_sync.c)
+PROJECT(KinectProject)
 
-find_package(OpenCV REQUIRED)
-target_link_libraries(graffiti freenect ${OpenCV_LIBS})
-target_link_libraries(hand freenect ${OpenCV_LIBS})
+IF(APPLE)
+   #SET(GUI_TYPE MACOSX_BUNDLE)
+   INCLUDE_DIRECTORIES ( /Developer/Headers/FlatCarbon )
+   FIND_LIBRARY(APP_SERVICES_LIBRARY ApplicationServices )
+   MARK_AS_ADVANCED (APP_SERVICES_LIBRARY)
+   SET(EXTRA_LIBS ${APP_SERVICES_LIBRARY})
+ENDIF (APPLE)
 
-install (TARGETS graffiti DESTINATION bin)
-install (TARGETS hand DESTINATION bin)
+
+ADD_EXECUTABLE(graffiti graffiti.c libMyKinect.c libfreenect_sync.c)
+ADD_EXECUTABLE(hand hand.c libMyKinect.c gestureManager.c eig3.c libfreenect_sync.c)
+
+FIND_PACKAGE(OpenCV REQUIRED)
+TARGET_LINK_LIBRARIES(graffiti freenect ${OpenCV_LIBS})
+TARGET_LINK_LIBRARIES(hand freenect ${OpenCV_LIBS} ${EXTRA_LIBS})
+
+INSTALL (TARGETS graffiti DESTINATION bin)
+INSTALL (TARGETS hand DESTINATION bin)
 
