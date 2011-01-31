@@ -24,12 +24,12 @@ PclImage bgPcl;
 
 #define DISTANCE_THRESHOLD 0.04
 #define COLOR_RGB_THRESHOLD 100
-#define COLOR_UV_THRESHOLD 0.1
-#define CHANGE_COUNT_THRESHOLD 5
-#define AREA_THRESHOLD 30
+#define COLOR_UV_THRESHOLD 0.2
 unsigned char changeCount[FREENECT_FRAME_H][FREENECT_FRAME_W];
 
 
+int changeCountThreshold = 5;
+int areaThreshold = 100;
 
 
 void initBackground() {
@@ -152,6 +152,9 @@ void initWindows() {
 	cvMoveWindow("ColorChange", 640, 0);
 	cvMoveWindow("Graffiti", 640, 0);
 	
+	cvCreateTrackbar("ChangeCount", "MyRGB", &changeCountThreshold, 20, NULL);
+	cvCreateTrackbar("MinArea", "MyRGB", &areaThreshold, 1000, NULL);
+	
 }
 
 int main(int argc, char **argv) {
@@ -206,7 +209,7 @@ int main(int argc, char **argv) {
 						changeCount[v][u] = 0;
 					}
 					
-					if(changeCount[v][u] > CHANGE_COUNT_THRESHOLD) {
+					if(changeCount[v][u] > changeCountThreshold) {
 						((unsigned char *) imageGraffiti->imageData)[v*FREENECT_FRAME_W + u] = 255;
 					}
 					else {
@@ -287,7 +290,7 @@ int main(int argc, char **argv) {
 					}
 				}
 			}
-			if (area > AREA_THRESHOLD) {
+			if (area > areaThreshold) {
 				cvRectangle(imageMyRgb, cvPoint(uMin, vMin), cvPoint(uMax, vMax), cvScalar(0, 255, 0, 0), 2, 8, 0);
 				graffitiCount++;
 			}

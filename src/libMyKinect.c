@@ -124,23 +124,20 @@ int createPclImage(PclImage dest) {
 	IplImage *rgbImage = cvCreateImageHeader(cvSize(FREENECT_FRAME_W, FREENECT_FRAME_H ), IPL_DEPTH_8U, 3);
 	IplImage *rgbImageUndist = cvCreateImage(cvSize(FREENECT_FRAME_W, FREENECT_FRAME_H ), IPL_DEPTH_8U, 3);
 	cvSetData(rgbImage, dataRgb, FREENECT_FRAME_W*3);
-   // cvCvtColor(rgbImage, rgbImage, CV_RGB2BGR);
 
     IplImage *depthImage = cvCreateImageHeader(cvSize(FREENECT_FRAME_W, FREENECT_FRAME_H ), IPL_DEPTH_16U, 1);
     IplImage *depthImageUndist = cvCreateImage(cvSize(FREENECT_FRAME_W, FREENECT_FRAME_H ), IPL_DEPTH_16U, 1);
     cvSetData(depthImage, dataDepth, FREENECT_FRAME_W*2);
 
+	// problems with undistort images
 	// cvRemap(rgbImage, rgbImageUndist, rgbMapX, rgbMapY, CV_INTER_LINEAR+CV_WARP_FILL_OUTLIERS, cvScalarAll(255));
 	// cvRemap(depthImage, depthImageUndist, irMapX, irMapY, CV_INTER_LINEAR+CV_WARP_FILL_OUTLIERS, cvScalarAll(255));
-
-
-	// problems with undistort images
 	
 	int u, v;
 	for(v=0; v<FREENECT_FRAME_H; v++) {
 		for(u=0; u<FREENECT_FRAME_W; u++) {
 			dest[v][u].z = depthToMts(((uint16_t *)(depthImage->imageData))[v*FREENECT_FRAME_W+u]);
-			if (dest[v][u].z == 0 || ((unsigned char *)(irMask->imageData))[v*FREENECT_FRAME_W+u] == 255 ) {
+			if (dest[v][u].z == 0 )    {  // || ((unsigned char *)(irMask->imageData))[v*FREENECT_FRAME_W+u] == 255 ) {
 				dest[v][u].valid = 0;
 				continue;
 			}
@@ -227,7 +224,6 @@ void rgbImage(PclImage src, IplImage *dst) {
 	}
 }
 
-
 void depthImage(PclImage src, IplImage *dst) {
 	int u, v;
 	for(v=0; v<FREENECT_FRAME_H; v++) {
@@ -242,6 +238,59 @@ void depthImage(PclImage src, IplImage *dst) {
 	}
 }
 
+
+void bwImage(PclImage src, IplImage *dst) {
+	cvZero(dst);
+	
+	int u, v;
+	for(v=0; v<FREENECT_FRAME_H; v++) {
+		for(u=0; u<FREENECT_FRAME_W; u++) {
+			if (src[v][u].valid) {
+				((unsigned char*)(dst->imageData))[FREENECT_FRAME_W*v + u] = 255;
+			}
+			else {
+				((unsigned char*)(dst->imageData))[FREENECT_FRAME_W*v + u] = 0;
+			}
+		}
+	}
+}
+
+void invalidatePcl(PclImage pcl) {
+	int u, v;
+	
+	for (v=0; v<FREENECT_FRAME_H; v++)
+		for (u=0; u<FREENECT_FRAME_W; u++)
+			pcl[v][u].valid = 0;
+}
+
+float getMinDistance(PclImage pcl) {
+	float minDist = 100;
+	int u, v;
+	for(v=0; v<FREENECT_FRAME_H; v++) {
+		for(u=0; u<FREENECT_FRAME_W; u++) {
+			
+			if (pcl[v][u].valid && pcl[v][u].z < minDist  && pcl[v][u].z > 0) {
+				minDist = pcl[v][u].z;
+			}
+		}
+	}
+	return minDist;
+}
+
+
+void pclDistThreshold(PclImage pcl, float minDist, float maxDist) {
+	int u, v;
+		
+	for(v=0; v<FREENECT_FRAME_H; v++) {
+		for(u=0; u<FREENECT_FRAME_W; u++) {
+			if (pcl[v][u].valid && (pcl[v][u].z > maxDist || pcl[v][u].z < minDist)) {
+				pcl[v][u].valid = 0;
+			}
+		}
+	}
+}
+																
+
 float spaceDistance(Point3d pt1, Point3d pt2) {
 	return sqrt(pow(pt1.x-pt2.x,2)+pow(pt1.y-pt2.y,2)+pow(pt1.z-pt2.z,2));
 }
@@ -254,8 +303,68 @@ float colorUvDistance(Point3d pt1, Point3d pt2) {
 	return sqrt(pow(pt1.U-pt2.U,2)+pow(pt1.V-pt2.V,2));
 }
 
+float colorMahalanobisDistance(Point3d point, double meanColorVec[], double inverseCovarMat[3][3]) {
+	
+	float auxVec[3];
+	
+	auxVec[0] = (point.Y - meanColorVec[0]) * inverseCovarMat[0][0] + (point.U - meanColorVec[1]) * inverseCovarMat[1][0] + (point.V - meanColorVec[2]) * inverseCovarMat[2][0];
+	auxVec[1] = (point.Y - meanColorVec[0]) * inverseCovarMat[0][1] + (point.U - meanColorVec[1]) * inverseCovarMat[1][1] + (point.V - meanColorVec[2]) * inverseCovarMat[2][1];
+	auxVec[2] = (point.Y - meanColorVec[0]) * inverseCovarMat[0][2] + (point.U - meanColorVec[1]) * inverseCovarMat[1][2] + (point.V - meanColorVec[2]) * inverseCovarMat[2][2];
+	
+	float dist = auxVec[0] * (point.Y - meanColorVec[0]) + auxVec[0] * (point.U - meanColorVec[1]) + auxVec[2] * (point.V - meanColorVec[2]);
+	
+	return sqrt(dist);
+	
+}
 
-void barycenter(PclImage src, float* x, float* y, float* z) {
+
+double invertMat(double A[3][3], double X[3][3]) {
+	
+	double det = 0;	
+	
+	det += A[0][0] * (A[1][1] * A[2][2] - A[1][2] * A[2][1]);
+	det += A[0][1] * (A[1][2] * A[2][0] - A[2][2] * A[1][0]);
+	det += A[0][2] * (A[1][0] * A[2][1] - A[1][1] * A[2][0]);
+	
+	if(det==0) {
+		return 0;
+	}
+	
+	X[0][0] = (A[1][1] * A[2][2] - A[1][2] * A[2][1]) / det;
+	X[1][0] = (A[1][2] * A[2][0] - A[1][0] * A[2][2]) / det;
+	X[2][0] = (A[1][0] * A[2][1] - A[1][1] * A[2][0]) / det;
+	
+	X[0][1] = (A[0][2] * A[2][1] - A[0][1] * A[2][2]) / det;
+	X[1][1] = (A[0][0] * A[2][2] - A[0][2] * A[2][0]) / det;
+	X[2][1] = (A[0][1] * A[2][0] - A[0][0] * A[2][1]) / det;
+	
+	X[0][2] = (A[0][1] * A[1][2] - A[0][2] * A[1][1]) / det;
+	X[1][2] = (A[1][2] * A[1][0] - A[0][0] * A[1][2]) / det;
+	X[2][2] = (A[0][0] * A[1][1] - A[0][1] * A[1][0]) / det;
+	
+	return det;	
+}
+
+
+void printMatrix(char* name, float** matrix, int order) {
+	printf("\n\n========== ");
+	printf(name);
+	printf("=========");
+	
+	int i, j;
+	for(i=0;i<order;i++) {
+		printf("\n{");
+		for(j=0;j<order;j++) {     
+			printf("%f",i,j, matrix[i][j]);
+			if (j<2) printf(", ");
+		}
+		printf("}");
+	}
+}
+
+
+
+int barycenter(PclImage src, double* x, double* y, double* z) {
 	*x = 0;
 	*y = 0;
 	*z = 0;
@@ -276,5 +385,6 @@ void barycenter(PclImage src, float* x, float* y, float* z) {
 	*x /= count;
 	*y /= count;
 	*z /= count;	
+	return count;
 }
 

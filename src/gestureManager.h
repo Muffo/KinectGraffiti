@@ -1,2 +1,5 @@
 
-void setHandPosition(double barycX, double barycY, double barycZ, double normVecX, double normVecY, double normVecZ);
+void setHandPosition(PclImage handPcl);
+
+int handOpen(PclImage handPcl);
+void moveMouse();
