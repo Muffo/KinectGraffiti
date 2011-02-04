@@ -13,18 +13,20 @@
 #include <opencv/highgui.h>
 #include "libMyKinect.h"
 
+int useYuvColor = 1;
 int saveFlag;		
 double freenect_angle = 0;
 
-PclImage curPcl;
-PclImage bgPcl;
-
-#define INIT_LEN 10
+PointCloud curPcl;
+PointCloud bgPcl;
 
 
-#define DISTANCE_THRESHOLD 0.04
+#define INIT_SEQ_LENGTH 4
+
 #define COLOR_RGB_THRESHOLD 100
-#define COLOR_UV_THRESHOLD 0.2
+#define DISTANCE_THRESHOLD 0.04
+#define COLOR_UV_THRESHOLD 0.1
+#define COLOR_Y_THRESHOLD 0.7
 unsigned char changeCount[FREENECT_FRAME_H][FREENECT_FRAME_W];
 
 
@@ -32,16 +34,16 @@ int changeCountThreshold = 5;
 int areaThreshold = 100;
 
 
-void initBackground() {
+void backgroundInit() {
 	int i, u, v;
 	
-	PclImage *bgPclArray = (PclImage *)malloc(INIT_LEN * sizeof(PclImage));
+	PointCloud *bgPclArray = (PointCloud *)malloc(INIT_SEQ_LENGTH * sizeof(PointCloud));
 
 	printf("Background initialization: capture images\n");
 	fflush(stdout);
 
-	for (i=0; i<INIT_LEN; i++) {
-		createPclImage(bgPclArray[i]);
+	for (i=0; i<INIT_SEQ_LENGTH; i++) {
+		createPointCloud(bgPclArray[i]);
 		cvWaitKey(10);
 	}
 
@@ -63,7 +65,7 @@ void initBackground() {
 			float UAcc = 0;
 			float VAcc = 0;
 
-			for (i=0; i<INIT_LEN; i++) {
+			for (i=0; i<INIT_SEQ_LENGTH; i++) {
 				if (bgPclArray[i][v][u].valid) {
 					validCount++;
 					blueAcc += bgPclArray[i][v][u].blue;
@@ -78,7 +80,7 @@ void initBackground() {
 				}
 			}
 
-			if (validCount > (0.8 * INIT_LEN)) {
+			if (validCount > (0.8 * INIT_SEQ_LENGTH)) {
 				bgPcl[v][u].valid = 1;
 				bgPcl[v][u].blue = round(blueAcc/validCount);
 				bgPcl[v][u].red = round(redAcc/validCount);
@@ -102,8 +104,6 @@ void initBackground() {
 	free(bgPclArray);
 	printf("Background initialization: elaboration - DONE\n");
 	fflush(stdout);
-	
-
 }
 
 int processKeyPressed(int keyPressed) {
@@ -126,11 +126,15 @@ int processKeyPressed(int keyPressed) {
 				freenect_sync_set_tilt_degs(freenect_angle);
 				break;
 			case 'x':
-				initBackground();
+				backgroundInit();
 				break;
 			case 'c':
 				saveFlag = 1;
 				break;
+			case 'z':
+				useYuvColor = !useYuvColor;
+				break;
+
 		}
 	}
 	return 1;
@@ -141,15 +145,15 @@ int processKeyPressed(int keyPressed) {
 void initWindows() {	
 	cvNamedWindow("MyRGB", CV_WINDOW_AUTOSIZE);
 	cvNamedWindow("Depth", CV_WINDOW_AUTOSIZE);
-	cvNamedWindow("SpaceChange", CV_WINDOW_AUTOSIZE);
+	cvNamedWindow("PositionChange", CV_WINDOW_AUTOSIZE);
 	cvNamedWindow("ColorChange", CV_WINDOW_AUTOSIZE);
 	cvNamedWindow("Graffiti", CV_WINDOW_AUTOSIZE);
 	
 	
 	cvMoveWindow("MyRGB", 0, 0);
 	cvMoveWindow("Depth", 0, 500);
-	cvMoveWindow("SpaceChange", 640, 500);
-	cvMoveWindow("ColorChange", 640, 0);
+	cvMoveWindow("PositionChange", 640, 500);
+	cvMoveWindow("ColorChange", 0, 500);
 	cvMoveWindow("Graffiti", 640, 0);
 	
 	cvCreateTrackbar("ChangeCount", "MyRGB", &changeCountThreshold, 20, NULL);
@@ -161,7 +165,7 @@ int main(int argc, char **argv) {
 
 	IplImage *imageMyRgb = cvCreateImage(cvSize(640, 480), IPL_DEPTH_8U, 3);
 	IplImage *imageDepth = cvCreateImage(cvSize(640, 480), IPL_DEPTH_8U, 1);
-	IplImage *spaceChange = cvCreateImage(cvSize(640, 480), IPL_DEPTH_8U, 1);
+	IplImage *positionChange = cvCreateImage(cvSize(640, 480), IPL_DEPTH_8U, 1);
 	IplImage *colorChange = cvCreateImage(cvSize(640, 480), IPL_DEPTH_8U, 1);
 	IplImage *imageGraffiti = cvCreateImage(cvSize(640, 480), IPL_DEPTH_8U, 1);
 
@@ -171,17 +175,17 @@ int main(int argc, char **argv) {
 	
 	initWindows();
 	initDepthLut();
-	initUndistortMaps();
- 	initBackground();
+	loadParameters();
+ 	backgroundInit();
 	
 	while (processKeyPressed(cvWaitKey(10))) {
 		
-		uint32_t timestamp = createPclImage(curPcl);
+		uint32_t timestamp = createPointCloud(curPcl);
 	
 		rgbImage(curPcl, imageMyRgb);
 		depthImage(curPcl, imageDepth);
 		
-		cvZero(spaceChange);
+		cvZero(positionChange);
 		cvZero(colorChange);
 		cvZero(imageGraffiti);
 
@@ -191,18 +195,35 @@ int main(int argc, char **argv) {
 				if (bgPcl[v][u].valid && curPcl[v][u].valid) {
 
 					int colorChanged = 0;
-					int spaceChanged = 0;
+					int positionChanged = 0;
 					if(spaceDistance(bgPcl[v][u], curPcl[v][u]) > DISTANCE_THRESHOLD) {
-						((unsigned char *) spaceChange->imageData)[v*FREENECT_FRAME_W + u] = 255;
-						spaceChanged = 1;
+						((unsigned char *) positionChange->imageData)[v*FREENECT_FRAME_W + u] = 255;
+						positionChanged = 1;
 					}
 
-					if(colorUvDistance(bgPcl[v][u], curPcl[v][u]) > COLOR_UV_THRESHOLD) {
+					if(useYuvColor) {
+						float uvDistance =  colorUvDistance(bgPcl[v][u], curPcl[v][u]);
+						float yDistance = bgPcl[v][u].Y - curPcl[v][u].Y;
+						yDistance = yDistance > 0 ? yDistance : -yDistance;
+						
+						if(yDistance> COLOR_Y_THRESHOLD || uvDistance > COLOR_UV_THRESHOLD) {
+							((unsigned char *) colorChange->imageData)[v*FREENECT_FRAME_W + u] = 255;
+							colorChanged = 1;
+						}
+					} else {
+						if(colorRgbDistance(bgPcl[v][u], curPcl[v][u]) > COLOR_RGB_THRESHOLD) {
+							((unsigned char *) colorChange->imageData)[v*FREENECT_FRAME_W + u] = 255;
+							colorChanged = 1;
+						}
+					}
+
+					if(colorRgbDistance(bgPcl[v][u], curPcl[v][u]) > COLOR_RGB_THRESHOLD) {
+
 						((unsigned char *) colorChange->imageData)[v*FREENECT_FRAME_W + u] = 255;
 						colorChanged = 1;
 					}
 
-					if (colorChanged && !spaceChanged) {
+					if (colorChanged && !positionChanged) {
 						changeCount[v][u]++;
 					}
 					else {
@@ -220,10 +241,11 @@ int main(int argc, char **argv) {
 			}
 		}
 		
-		cvDilate(imageGraffiti, imageGraffiti, NULL, 1);
+		// cvErode(imageGraffiti, imageGraffiti, NULL, 2);
+		// cvDilate(imageGraffiti, imageGraffiti, NULL, 3);
 		
 		
-		// labeling
+		// graffiti analysis
 		unsigned char label = 255;
 		for(v=0; v<FREENECT_FRAME_H; v++) {
 			for(u=0; u<FREENECT_FRAME_W; u++) {
@@ -300,14 +322,14 @@ int main(int argc, char **argv) {
 		cvInitFont(&font, CV_FONT_HERSHEY_PLAIN, 1, 1, 0, 1, 8);
 		
 		char outString[50];
-		sprintf(outString, "%lu - Graffiti count: %d", timestamp, graffitiCount);
+		sprintf(outString, "%lu - YUV: %d - Graffiti count: %d", timestamp, useYuvColor, graffitiCount);
 		cvPutText(imageMyRgb, outString, cvPoint(30,30), &font, cvScalar(0,255, 0, 0));
 	
 		
 		cvShowImage("MyRGB", imageMyRgb);
 //		cvShowImage("Depth", imageDepth);
-//		cvShowImage("ColorChange", colorChange);
-//		cvShowImage("SpaceChange", spaceChange);
+		cvShowImage("ColorChange", colorChange);
+		cvShowImage("PositionChange", positionChange);
 		cvShowImage("Graffiti", imageGraffiti);
 		
 		

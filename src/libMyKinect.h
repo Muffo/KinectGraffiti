@@ -32,20 +32,20 @@ typedef struct {
 	float V;
 } Point3d;
 
-typedef Point3d PclImage[480][640];
+typedef Point3d PointCloud[480][640];
 
-int createPclImage(PclImage dest);
-void initUndistortMaps();
+int createPointCloud(PointCloud dest);
+void loadParameters();
 void initDepthLut();
 
-void rgbImage(PclImage src, IplImage *dst);
-void depthImage(PclImage src, IplImage *dst);
-void bwImage(PclImage src, IplImage *dst);
+void rgbImage(PointCloud src, IplImage *dst);
+void depthImage(PointCloud src, IplImage *dst);
+void binaryImage(PointCloud src, IplImage *dst);
 
 
-float getMinDistance(PclImage pcl);
-void pclDistThreshold(PclImage pcl, float minDist, float maxDist);
-void invalidatePcl(PclImage pcl);
+float getMinDistance(PointCloud pcl);
+void pclDistThreshold(PointCloud pcl, float minDist, float maxDist);
+void invalidatePcl(PointCloud pcl);
 
 
 float spaceDistance(Point3d pt1, Point3d pt2);
@@ -57,7 +57,7 @@ double invertMat(double A[3][3], double X[3][3]);
 void printMatrix(char* name, float** matrix, int order);
 
 
-int barycenter(PclImage src, double* x, double* y, double* z);
+int barycenter(PointCloud src, double* x, double* y, double* z);
 
 
 #endif /* LIBMYKINECT_H_ */

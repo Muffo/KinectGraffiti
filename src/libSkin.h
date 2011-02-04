@@ -15,9 +15,9 @@
 #define SAMPLE_VEC_SIZE 100000
 
 
-void getSkinSeed(PclImage pcl, int* seedSkinX, int* seedSkinY);
-void regionGrowing(PclImage src, PclImage dst, int threshold);
+void getSkinSeed(PointCloud pcl, int* seedSkinX, int* seedSkinY);
+void regionGrowing(PointCloud src, PointCloud dst, int threshold);
 void resetSkinSample();
 
-int grabSkinSample(PclImage pcl, int seedSkinX, int seedSkinY, int sampleSize);
+int grabSkinSample(PointCloud pcl, int seedSkinX, int seedSkinY, int sampleSize);
 void printSampleInfo();

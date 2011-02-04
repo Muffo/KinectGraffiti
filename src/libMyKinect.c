@@ -58,7 +58,7 @@ static IplImage* irMapX;
 static IplImage* irMapY;
 static IplImage* irMask;
 
-void initUndistortMaps() {
+void loadParameters() {
 	rgbIntrinsic = (CvMat*)cvLoad( "../data/Intrinsics_RGB.xml", NULL, NULL, NULL );
 	rgbDistortion = (CvMat*)cvLoad( "../data/Distortion_RGB.xml", NULL, NULL, NULL);
 
@@ -117,7 +117,7 @@ int getKinectData() {
 }
 
 
-int createPclImage(PclImage dest) {
+int createPointCloud(PointCloud dest) {
 	
 	while(getKinectData()<0);
 	
@@ -129,15 +129,14 @@ int createPclImage(PclImage dest) {
     IplImage *depthImageUndist = cvCreateImage(cvSize(FREENECT_FRAME_W, FREENECT_FRAME_H ), IPL_DEPTH_16U, 1);
     cvSetData(depthImage, dataDepth, FREENECT_FRAME_W*2);
 
-	// problems with undistort images
-	// cvRemap(rgbImage, rgbImageUndist, rgbMapX, rgbMapY, CV_INTER_LINEAR+CV_WARP_FILL_OUTLIERS, cvScalarAll(255));
-	// cvRemap(depthImage, depthImageUndist, irMapX, irMapY, CV_INTER_LINEAR+CV_WARP_FILL_OUTLIERS, cvScalarAll(255));
+	cvRemap(rgbImage, rgbImageUndist, rgbMapX, rgbMapY, CV_WARP_FILL_OUTLIERS, cvScalarAll(255));
+	cvRemap(depthImage, depthImageUndist, irMapX, irMapY, CV_WARP_FILL_OUTLIERS, cvScalarAll(255));
 	
 	int u, v;
 	for(v=0; v<FREENECT_FRAME_H; v++) {
 		for(u=0; u<FREENECT_FRAME_W; u++) {
 			dest[v][u].z = depthToMts(((uint16_t *)(depthImage->imageData))[v*FREENECT_FRAME_W+u]);
-			if (dest[v][u].z == 0 )    {  // || ((unsigned char *)(irMask->imageData))[v*FREENECT_FRAME_W+u] == 255 ) {
+			if (dest[v][u].z == 0 || ((unsigned char *)(irMask->imageData))[v*FREENECT_FRAME_W+u] == 255 ) {
 				dest[v][u].valid = 0;
 				continue;
 			}
@@ -206,7 +205,7 @@ int createPclImage(PclImage dest) {
 	return timestamp;
 }
 
-void rgbImage(PclImage src, IplImage *dst) {
+void rgbImage(PointCloud src, IplImage *dst) {
 	int u, v;
 	for(v=0; v<FREENECT_FRAME_H; v++) {
 		for(u=0; u<FREENECT_FRAME_W; u++) {
@@ -224,7 +223,7 @@ void rgbImage(PclImage src, IplImage *dst) {
 	}
 }
 
-void depthImage(PclImage src, IplImage *dst) {
+void depthImage(PointCloud src, IplImage *dst) {
 	int u, v;
 	for(v=0; v<FREENECT_FRAME_H; v++) {
 		for(u=0; u<FREENECT_FRAME_W; u++) {
@@ -239,7 +238,7 @@ void depthImage(PclImage src, IplImage *dst) {
 }
 
 
-void bwImage(PclImage src, IplImage *dst) {
+void binaryImage(PointCloud src, IplImage *dst) {
 	cvZero(dst);
 	
 	int u, v;
@@ -255,7 +254,7 @@ void bwImage(PclImage src, IplImage *dst) {
 	}
 }
 
-void invalidatePcl(PclImage pcl) {
+void invalidatePcl(PointCloud pcl) {
 	int u, v;
 	
 	for (v=0; v<FREENECT_FRAME_H; v++)
@@ -263,7 +262,7 @@ void invalidatePcl(PclImage pcl) {
 			pcl[v][u].valid = 0;
 }
 
-float getMinDistance(PclImage pcl) {
+float getMinDistance(PointCloud pcl) {
 	float minDist = 100;
 	int u, v;
 	for(v=0; v<FREENECT_FRAME_H; v++) {
@@ -278,7 +277,7 @@ float getMinDistance(PclImage pcl) {
 }
 
 
-void pclDistThreshold(PclImage pcl, float minDist, float maxDist) {
+void pclDistThreshold(PointCloud pcl, float minDist, float maxDist) {
 	int u, v;
 		
 	for(v=0; v<FREENECT_FRAME_H; v++) {
@@ -364,7 +363,7 @@ void printMatrix(char* name, float** matrix, int order) {
 
 
 
-int barycenter(PclImage src, double* x, double* y, double* z) {
+int barycenter(PointCloud src, double* x, double* y, double* z) {
 	*x = 0;
 	*y = 0;
 	*z = 0;

@@ -13,7 +13,7 @@ double meanColorVec[3];
 Point3d sampleVec[SAMPLE_VEC_SIZE];
 int sampleVecIndex = 0;
  
-void getSkinSeed(PclImage pcl, int* seedSkinX, int* seedSkinY) {
+void getSkinSeed(PointCloud pcl, int* seedSkinX, int* seedSkinY) {
 	
 	float colorDist;
 	int maxSkinPixelCount = 0;
@@ -60,7 +60,7 @@ void getSkinSeed(PclImage pcl, int* seedSkinX, int* seedSkinY) {
 }
 
 
-void regionGrowing(PclImage src, PclImage dst, int threshold) {
+void regionGrowing(PointCloud src, PointCloud dst, int threshold) {
 	
 	int i,j,m,n,again;
 	
@@ -105,7 +105,7 @@ void regionGrowing(PclImage src, PclImage dst, int threshold) {
 }
 
 
-int grabSkinSample(PclImage pcl, int seedSkinX, int seedSkinY, int sampleSize) {
+int grabSkinSample(PointCloud pcl, int seedSkinX, int seedSkinY, int sampleSize) {
 	double meanY = 0;
 	double meanU = 0;
 	double meanV = 0;
@@ -179,7 +179,7 @@ void printSampleInfo() {
 	int i, j;
 	
 	printf("SampleSize = %d\n", sampleVecIndex);
-	printf("Y = %f\tU = %fV = %f\n", meanColorVec[0], meanColorVec[1], meanColorVec[2]);
+	printf("Y = %f\tU = %f\tV = %f\n", meanColorVec[0], meanColorVec[1], meanColorVec[2]);
 	
 	
 	printf("\n\n========== Covar =========");

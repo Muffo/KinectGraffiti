@@ -11,8 +11,8 @@ IF(APPLE)
 ENDIF (APPLE)
 
 
-ADD_EXECUTABLE(graffiti graffiti.c libMyKinect.c libfreenect_sync.c)
-ADD_EXECUTABLE(hand hand.c libMyKinect.c libSkin.c gestureManager.c eig3.c libfreenect_sync.c)
+ADD_EXECUTABLE(graffiti graffiti.c libfreenect_sync.c libMyKinect.c)
+ADD_EXECUTABLE(hand hand.c libfreenect_sync.c libMyKinect.c  eig3.c libSkin.c gestureManager.c libMouseOSX.c)
 
 FIND_PACKAGE(OpenCV REQUIRED)
 TARGET_LINK_LIBRARIES(graffiti freenect ${OpenCV_LIBS})

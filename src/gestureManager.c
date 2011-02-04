@@ -1,16 +1,15 @@
-
-#include <ApplicationServices/ApplicationServices.h> // mouse
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
 #include <unistd.h>
+#include "eig3.h"
 #include "libMyKinect.h"
 #include "gestureManager.h"
+#include "libMouseOSX.h"
 
 
 #define MIN_HAND_POINT_NUMBER 5
-#define OPEN_HAND_FORM_FACTOR 0.35
+#define OPEN_HAND_FORM_FACTOR 0.55
 
 
 double barycX, barycY, barycZ;
@@ -18,16 +17,16 @@ double prevBarycX, prevBarycY, prevBarycZ;
 double majorAxeX, majorAxeY, majorAxeZ;
 double normVecX, normVecY, normVecZ;
 double prevNormVecX, prevNormVecY, prevNormVecZ;
+float formFactor;
 
-int isHandOpen = 0;
-
+int isOpenHand = 0;
 int prevAngleX = 0;
 
 
 #define MOUSE_CLICK_UP 0
 #define MOUSE_CLICK_DOWN 1
-int mouseLeftState = MOUSE_CLICK_UP;
-int mouseRightState = MOUSE_CLICK_UP;
+int leftButtonState = MOUSE_CLICK_UP;
+int rightButtonState = MOUSE_CLICK_UP;
 
 #define HAND_POS_BUFFER_SIZE 3
 double barycBufferX[HAND_POS_BUFFER_SIZE];
@@ -38,7 +37,7 @@ int barycBufferIndex = 0;
 int mousePosX, mousePosY;
 
 
-void setHandPosition(PclImage handPcl) {
+void updateHandPosition(PointCloud handPcl) {
 	
 	int i, j;
 	
@@ -48,7 +47,7 @@ void setHandPosition(PclImage handPcl) {
 	}
 		
 
-	isHandOpen = handOpen(handPcl);
+	isOpenHand = openHand(handPcl);
 	
 	double posCovarMat[3][3];
 	double posCovarMatEigVec[3][3];
@@ -107,11 +106,11 @@ void setHandPosition(PclImage handPcl) {
 }
 
 
-int handOpen(PclImage handPcl) {
+int openHand(PointCloud handPcl) {
 	
 	IplImage *imageHandBw = cvCreateImage(cvSize(640,480), 8, 1);
 	
-	bwImage(handPcl, imageHandBw);
+	binaryImage(handPcl, imageHandBw);
 	cvDilate(imageHandBw, imageHandBw, NULL, 5);
 	cvErode(imageHandBw, imageHandBw, NULL, 3);
 
@@ -130,7 +129,7 @@ int handOpen(PclImage handPcl) {
 		}
 	}
 	
-	float formFactor= 4 * M_PI * area / (perimeter * perimeter);
+	formFactor= 4 * M_PI * area / (perimeter * perimeter);
 	
 	//printf("PointCount: %d - Perimeter: %d - FF: %f\n", area, perimeter, formFactor);
 	// cvShowImage("Depth", imageHandBw);
@@ -150,17 +149,14 @@ void moveMouse() {
 
 	
 	
-	if (isHandOpen) {
+	if (isOpenHand) {
 		
 		int prevBarycBufferIndex = (barycBufferIndex > 0) ? barycBufferIndex-1 : HAND_POS_BUFFER_SIZE-1;
 		
 		int countX = -round((barycBufferX[barycBufferIndex] - barycBufferX[prevBarycBufferIndex]) * 600);
 		int countY = round((barycBufferY[barycBufferIndex] - barycBufferY[prevBarycBufferIndex]) * 600);
 		
-		CGEventRef event = CGEventCreateScrollWheelEvent(NULL, kCGScrollEventUnitPixel, 2, countY, countX);
-		CGEventSetType(event, kCGEventScrollWheel);
-		CGEventPost(kCGSessionEventTap, event);
-		CFRelease(event);
+		verticalScroll(countX, countY);
 		
 		printf("Scrolling > countX: %d\n", countX);
 		return;
@@ -183,71 +179,56 @@ void moveMouse() {
 	mousePosY = round(meanBarycY * 1280 + 400);
 	
 
-	if (mouseLeftState == MOUSE_CLICK_UP && normVecY < -0.45) {
-		CGEventRef clickLeftDown = CGEventCreateMouseEvent(
-														   NULL, kCGEventLeftMouseDown,
-														   CGPointMake(mousePosX, mousePosY),
-														   kCGMouseButtonLeft
-														   );
-		
-		CGEventPost(kCGHIDEventTap, clickLeftDown);
-		CFRelease(clickLeftDown);
-		mouseLeftState = MOUSE_CLICK_DOWN;
+	if (leftButtonState == MOUSE_CLICK_UP && normVecY < -0.45) {
+		leftButtonPressed(mousePosX, mousePosY);
+		leftButtonState = MOUSE_CLICK_DOWN;
 		printf("Mouse click left down\n");
 		
 	}
-	else if (mouseLeftState == MOUSE_CLICK_DOWN && normVecY >= -0.45 ) {		
-		// Left button up at 250x250
-		CGEventRef clickLeftUp = CGEventCreateMouseEvent(
-														 NULL, kCGEventLeftMouseUp,
-														 CGPointMake(mousePosX, mousePosY),
-														 kCGMouseButtonLeft
-														 );
-		
-		CGEventPost(kCGHIDEventTap, clickLeftUp);
-		CFRelease(clickLeftUp);
-		mouseLeftState = MOUSE_CLICK_UP;
+	else if (leftButtonState == MOUSE_CLICK_DOWN && normVecY >= -0.45 ) {
+		leftButtonReleased(mousePosX, mousePosY);
+		leftButtonState = MOUSE_CLICK_UP;
 		printf("Mouse click left up\n");
 	}
-	else if (mouseRightState == MOUSE_CLICK_UP && normVecX < -0.5) {
-		CGEventRef clickRightDown = CGEventCreateMouseEvent(
-															NULL, kCGEventRightMouseDown,
-															CGPointMake(mousePosX, mousePosY),
-															kCGMouseButtonRight
-															);
-		
-		CGEventPost(kCGHIDEventTap, clickRightDown);
-		CFRelease(clickRightDown);
-		mouseRightState = MOUSE_CLICK_DOWN;
+	else if (rightButtonState == MOUSE_CLICK_UP && normVecX < -0.5) {
+		rightButtonPressed(mousePosX, mousePosY);
+		rightButtonState = MOUSE_CLICK_DOWN;
 		printf("Mouse click right down\n");	
 	}
-	else if (mouseRightState == MOUSE_CLICK_DOWN && normVecX >= -0.5 ) {		
-		// Left button up at 250x250
-		CGEventRef clickRightUp = CGEventCreateMouseEvent(
-														  NULL, kCGEventRightMouseDown,
-														  CGPointMake(mousePosX, mousePosY),
-														  kCGMouseButtonRight
-														  );
-		
-		CGEventPost(kCGHIDEventTap, clickRightUp);
-		CFRelease(clickRightUp);
-		mouseRightState = MOUSE_CLICK_UP;	
+	else if (rightButtonState == MOUSE_CLICK_DOWN && normVecX >= -0.5 ) {
+		rightButtonReleased(mousePosX, mousePosY);
+		rightButtonState = MOUSE_CLICK_UP;	
 		printf("Mouse click right up\n");
 	}	
-	
 	else {
-		
-		CGEventRef move = CGEventCreateMouseEvent(
-												  NULL, kCGEventMouseMoved,
-												  CGPointMake(mousePosX, mousePosY),
-												  kCGMouseButtonLeft // ignored
-												  );
-		
-		CGEventPost(kCGHIDEventTap, move);
-		CFRelease(move);
+		moveCursor(mousePosX, mousePosY);
 	}
 
 	
+}
+
+
+void printHandInfoOnImage(IplImage *image, CvFont font) {
+	char outString[50];
+	
+	sprintf(outString, "Barycenter: X: %.4f Y: %.4f  Z: %.4f",  barycX, barycY, barycZ);
+	cvPutText(image, outString, cvPoint(30,30), &font, cvScalar(0,200, 0, 0));
+	
+	sprintf(outString, "Normal Vec: X: %.4f Y: %.4f  Z: %.4f", normVecX, normVecY, normVecZ);
+	cvPutText(image, outString, cvPoint(30,50), &font, cvScalar(0,200, 0, 0));
+	
+	sprintf(outString, "Button state > Left %d - Right %d", leftButtonState, rightButtonState);
+	cvPutText(image, outString, cvPoint(30,70), &font, cvScalar(0,200, 0, 0));
+	
+	if (isOpenHand) {
+		sprintf(outString, "Form Factor: %.4f > Open", formFactor);
+	}
+	else {
+		sprintf(outString, "Form Factor: %.4f > Closed", formFactor);
+	}
+	cvPutText(image, outString, cvPoint(30,90), &font, cvScalar(0,200, 0, 0));
+
+
 }
 
 

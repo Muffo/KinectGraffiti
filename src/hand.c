@@ -1,5 +1,5 @@
 /*
- * graffiti.c
+ * hand.c
  *
  *  Created on: Dec 23, 2010
  *      Author: Andrea Grandi
@@ -18,35 +18,23 @@
 #include "eig3.h"
 #include "gestureManager.h"
 
-#define INITIAL_SAMPLE_SIZE 20
+#define DEFAULT_SAMPLE_SIZE 30
 #define DISTANCE_THRESHOLD 0.2
-
-#define CHANGE_COUNT_THRESHOLD 3
 
 
 int saveFlag;
 int displayGuideFlag = 1;
-int sampleSize = INITIAL_SAMPLE_SIZE;
+int sampleSize = DEFAULT_SAMPLE_SIZE;
 int grabSkinSampleFlag = 0;
 int handDetectionFlag = 0;
 int gestureFlag = 0;
 
 int specSkinColorThreshold = 8;
 
-
 double freenect_angle = 0;
 
-PclImage curPcl;
-PclImage handPcl;
-
-extern double barycX, barycY, barycZ;
-extern double normVecX, normVecY, normVecZ;
-
-
-unsigned char changeCount[FREENECT_FRAME_H][FREENECT_FRAME_W];
-
-
-
+PointCloud curPcl;
+PointCloud handPcl;
 
 int processKeyPressed(int keyPressed) {
 	if (keyPressed==27) return 0;
@@ -126,12 +114,11 @@ int main(int argc, char **argv) {
 	
 	initWindows();
 	initDepthLut();
-	initUndistortMaps();
-	// serialport_init("/dev/tty.usbserial-A400hsc7", 9600);
+	loadParameters();
 
 	while (processKeyPressed(cvWaitKey(10))) {
 		
-		uint32_t timestamp = createPclImage(curPcl);
+		uint32_t timestamp = createPointCloud(curPcl);
 		
 		float minDist = getMinDistance(curPcl);
 		pclDistThreshold(curPcl, minDist, minDist + DISTANCE_THRESHOLD);
@@ -142,18 +129,13 @@ int main(int argc, char **argv) {
 		handPcl[seedSkinY][seedSkinX] = curPcl[seedSkinY][seedSkinX];
 
 		
-		if (handDetectionFlag) {        // hand sample
-						
+		if (handDetectionFlag) { 						
 			regionGrowing(curPcl, handPcl, specSkinColorThreshold);
 			rgbImage(handPcl, imageHand);
 			
 			if (gestureFlag) {
-				setHandPosition(handPcl);
-				sprintf(outString, "Barycenter: X: %.4f Y: %.4f  Z: %.4f",  barycX, barycY, barycZ);
-				cvPutText(imageHand, outString, cvPoint(30,30), &font, cvScalar(0,200, 0, 0));
-				
-				sprintf(outString, "Normal Vec: X: %.4f Y: %.4f  Z: %.4f", normVecX, normVecY, normVecZ);
-				cvPutText(imageHand, outString, cvPoint(30,50), &font, cvScalar(0,200, 0, 0));
+				updateHandPosition(handPcl);
+				printHandInfoOnImage(imageHand, font);
 			}
 		}
 						
@@ -177,9 +159,8 @@ int main(int argc, char **argv) {
 									cvPoint(seedSkinX+sampleSize, seedSkinY+sampleSize), 
 									cvScalar(0, 255, 0, 0), 2, 8, 0);	
 			
-			sprintf(outString, "Seed X:%d Y%d", seedSkinX, seedSkinY);
+			sprintf(outString, "Seed X: %d - Y: %d", seedSkinX, seedSkinY);
 			cvPutText(imageMyRgb, outString, cvPoint(30,50), &font, cvScalar(0,200, 0, 0));
-
 		}
 		
 		cvShowImage("MyRGB", imageMyRgb);
