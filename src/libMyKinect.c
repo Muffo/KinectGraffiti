@@ -2,7 +2,7 @@
  * libMyKinect.c
  *
  *  Created on: Dec 23, 2010
- *      Author: Andrea Grandi
+ *  Author: Andrea Grandi
  */
 
 #include "libMyKinect.h"
@@ -154,7 +154,7 @@ int createPointCloud(PointCloud dest) {
 
 			double Tx = cvmGet(T_mat, 0, 0) / 100;
 			double Ty = cvmGet(T_mat, 1, 0) / 100;;
-			double Tz = cvmGet(T_mat, 1, 0) / 100;;
+			double Tz = cvmGet(T_mat, 2, 0) / 100;;
 
 			double rgbPointX = cvmGet(R_mat,0,0) * dest[v][u].x + cvmGet(R_mat,0,1) * dest[v][u].y + cvmGet(R_mat,0,2) * dest[v][u].z + Tx;
 			double rgbPointY = cvmGet(R_mat,1,0) * dest[v][u].x + cvmGet(R_mat,1,1) * dest[v][u].y + cvmGet(R_mat,1,2) * dest[v][u].z + Ty;

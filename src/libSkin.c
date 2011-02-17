@@ -15,7 +15,6 @@ int sampleVecIndex = 0;
  
 void getSkinSeed(PointCloud pcl, int* seedSkinX, int* seedSkinY) {
 	
-	float colorDist;
 	int maxSkinPixelCount = 0;
 	int curSkinPixelCount;
 	int u, v;
